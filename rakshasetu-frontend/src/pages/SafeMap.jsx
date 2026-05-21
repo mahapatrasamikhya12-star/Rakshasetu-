@@ -176,7 +176,7 @@ export default function SafeMap() {
             Safe <span style={{ color: "#c4843c" }}>Places Map</span>
           </h1>
           <p className="text-sm" style={{ color: "#7a4419" }}>
-            Nearest hospitals, police stations and pharmacies — completely free, no API key needed
+            Nearest hospitals, police stations and pharmacies
           </p>
         </div>
 
