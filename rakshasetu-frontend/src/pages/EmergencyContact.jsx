@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import Navbar from "../components/Navbar";
 
 const RELATIONS = ["Mother", "Father", "Sister", "Brother", "Friend", "Husband", "Other"];
@@ -10,11 +10,39 @@ export default function EmergencyContact() {
   const [sosSent, setSosSent] = useState(false);
   const [locating, setLocating] = useState(false);
   const [step, setStep] = useState("");
+  const [sirenActive, setSirenActive] = useState(false);
+  const sirenRef = useRef(null);
 
   useEffect(() => {
     const stored = localStorage.getItem("emergencyContacts");
     if (stored) setContacts(JSON.parse(stored));
   }, []);
+
+  useEffect(() => {
+    return () => {
+      if (sirenRef.current) {
+        sirenRef.current.pause();
+        sirenRef.current = null;
+      }
+    };
+  }, []);
+
+  const playSiren = () => {
+    const audio = new Audio("/sounds/sound.mp3");
+    audio.loop = true;
+    audio.volume = 1.0;
+    audio.play().catch((err) => console.log("Audio error:", err));
+    return audio;
+  };
+
+  const stopSiren = () => {
+    if (sirenRef.current) {
+      sirenRef.current.pause();
+      sirenRef.current.currentTime = 0;
+      sirenRef.current = null;
+    }
+    setSirenActive(false);
+  };
 
   const saveContact = () => {
     if (!form.name.trim() || !form.phone.trim()) return;
@@ -46,6 +74,10 @@ export default function EmergencyContact() {
       return;
     }
 
+    // START SIREN immediately using sound.mp3
+    setSirenActive(true);
+    sirenRef.current = playSiren();
+
     setLocating(true);
     setStep("Getting your location...");
 
@@ -63,7 +95,6 @@ export default function EmergencyContact() {
 
         setStep("Sending SMS to all contacts...");
 
-        // Step 1: Open SMS for each contact
         contacts.forEach((contact, index) => {
           const phone = contact.phone.replace(/\D/g, "");
           setTimeout(() => {
@@ -74,7 +105,6 @@ export default function EmergencyContact() {
           }, index * 800);
         });
 
-        // Step 2: After SMS, send WhatsApp as backup
         setTimeout(() => {
           setStep("Sending WhatsApp backup...");
           contacts.forEach((contact, index) => {
@@ -92,17 +122,14 @@ export default function EmergencyContact() {
           setStep("");
           setSosSent(true);
           setTimeout(() => setSosSent(false), 6000);
-        }, contacts.length * 800 + 1000);
+        }, contacts.length * 800 + 500);
       },
       () => {
-        // Location denied — send without location
         const message =
           "🆘 SOS ALERT! I need immediate help!\n\n" +
           "Please call me or dial 112 immediately.\n" +
           "— Sent via Rakshasetu Safety App";
 
-        setStep("Sending SMS...");
-
         contacts.forEach((contact, index) => {
           const phone = contact.phone.replace(/\D/g, "");
           setTimeout(() => {
@@ -114,7 +141,6 @@ export default function EmergencyContact() {
         });
 
         setTimeout(() => {
-          setStep("Sending WhatsApp backup...");
           contacts.forEach((contact, index) => {
             const phone = contact.phone.replace(/\D/g, "");
             const waNumber = phone.startsWith("91") ? phone : "91" + phone;
@@ -130,7 +156,12 @@ export default function EmergencyContact() {
           setStep("");
           setSosSent(true);
           setTimeout(() => setSosSent(false), 6000);
-        }, contacts.length * 800 + 1000);
+        }, contacts.length * 800 + 500);
+      },
+      {
+        enableHighAccuracy: false,
+        timeout: 5000,
+        maximumAge: 60000,
       }
     );
   };
@@ -150,7 +181,7 @@ export default function EmergencyContact() {
             Emergency <span className="text-red-400">Contacts</span>
           </h1>
           <p className="text-gray-400 text-sm">
-            Save up to 5 trusted contacts. One tap sends SMS + WhatsApp with your live location.
+            Save up to 5 trusted contacts. One tap triggers siren + SMS + WhatsApp with your live location.
           </p>
         </div>
 
@@ -162,11 +193,12 @@ export default function EmergencyContact() {
           <p className="text-white font-semibold mb-3 text-sm">⚡ How SOS works:</p>
           <div className="space-y-2">
             {[
-              "Press the SOS button below",
+              "Press the SOS button",
+              "Emergency siren starts playing loudly from your phone",
               "App gets your live GPS location",
-              "Opens SMS app — tap Send for each contact",
-              "Then sends WhatsApp as backup automatically",
-              "Both messages contain your Google Maps link",
+              "Opens SMS for each contact — tap Send",
+              "Sends WhatsApp with location as backup",
+              "Tap Stop Siren when you are safe",
             ].map((tip, i) => (
               <div key={i} className="flex items-start gap-2 text-sm text-gray-400">
                 <span className="text-red-400 font-bold">{i + 1}.</span>
@@ -175,39 +207,60 @@ export default function EmergencyContact() {
             ))}
           </div>
           <p className="text-yellow-400/80 text-xs mt-3 bg-yellow-500/10 px-3 py-2 rounded-lg border border-yellow-500/20">
-            💡 SMS works even without internet on receiver's phone. WhatsApp is sent as extra backup.
+            💡 Keep your phone volume at max for the siren to work loudly. SMS works even without internet.
           </p>
         </div>
 
         {/* SOS Button */}
         <div className="text-center mb-10">
+
+          {sirenActive && (
+            <div className="mb-4 bg-red-600/30 border border-red-500/50 text-red-300 py-3 px-6 rounded-2xl font-bold animate-pulse text-lg">
+              🚨 SIREN ACTIVE — EMERGENCY MODE 🚨
+            </div>
+          )}
+
           <button
             onClick={sendSOSToAll}
             disabled={locating || contacts.length === 0}
             className="relative w-52 h-52 rounded-full font-black text-white transition-all active:scale-95 shadow-2xl disabled:opacity-50 disabled:cursor-not-allowed"
             style={{
-              background: locating
+              background: sirenActive
+                ? "radial-gradient(circle, #ff0000, #7f0000)"
+                : locating
                 ? "radial-gradient(circle, #f97316, #ea580c)"
                 : "radial-gradient(circle, #ef4444, #b91c1c)",
-              boxShadow: locating
+              boxShadow: sirenActive
+                ? "0 0 100px rgba(255,0,0,0.9)"
+                : locating
                 ? "0 0 80px rgba(249,115,22,0.7)"
                 : contacts.length > 0
                 ? "0 0 80px rgba(239,68,68,0.6)"
                 : "0 0 40px rgba(239,68,68,0.2)",
+              animation: sirenActive ? "sirenPulse 0.5s infinite alternate" : "none",
             }}
           >
             <div className="flex flex-col items-center gap-2">
-              <span className="text-6xl">🆘</span>
+              <span className="text-6xl">{sirenActive ? "🚨" : "🆘"}</span>
               <span className="text-2xl font-black">
-                {locating ? "Sending..." : "SOS"}
+                {locating ? "Sending..." : sirenActive ? "SIREN ON" : "SOS"}
               </span>
               <span className="text-xs opacity-80 font-normal px-4 text-center">
                 {contacts.length === 0
                   ? "Add contacts first"
-                  : "SMS + WhatsApp to " + contacts.length + " contact" + (contacts.length > 1 ? "s" : "")}
+                  : "Alert " + contacts.length + " contact" + (contacts.length > 1 ? "s" : "")}
               </span>
             </div>
           </button>
+
+          {sirenActive && (
+            <button
+              onClick={stopSiren}
+              className="mt-5 px-10 py-3 rounded-2xl font-bold text-white border-2 border-red-500 transition-all hover:bg-red-500/20 text-lg"
+            >
+              🔇 Stop Siren
+            </button>
+          )}
 
           {locating && step && (
             <div className="mt-4 text-orange-400 text-sm font-medium animate-pulse">
@@ -324,7 +377,9 @@ export default function EmergencyContact() {
                 type="tel"
                 placeholder="Phone Number (10 digits)"
                 value={form.phone}
-                onChange={(e) => setForm({ ...form, phone: e.target.value.replace(/\D/g, "").slice(0, 10) })}
+                onChange={(e) =>
+                  setForm({ ...form, phone: e.target.value.replace(/\D/g, "").slice(0, 10) })
+                }
                 maxLength={10}
                 className="w-full bg-white/5 border border-white/10 text-white placeholder-gray-500 rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-red-500/50"
               />
@@ -352,6 +407,13 @@ export default function EmergencyContact() {
           Contacts saved on your device only. No data sent to any server.
         </p>
       </div>
+
+      <style>{`
+        @keyframes sirenPulse {
+          from { box-shadow: 0 0 80px rgba(255,0,0,0.8); }
+          to   { box-shadow: 0 0 140px rgba(255,0,0,1); }
+        }
+      `}</style>
     </div>
   );
 }
